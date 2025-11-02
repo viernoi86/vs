@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Éditeur Monaco (type VS Code)</title>
+  <style>
+    html,body{height:100%;margin:0}
+    .topbar{
+      height:48px;
+      display:flex;
+      align-items:center;
+      padding:6px 12px;
+      gap:8px;
+      background:#1e1e1e;
+      color:#fff;
+    }
+    .btn{background:#0e639c;border:none;padding:6px 10px;border-radius:6px;color:#fff;cursor:pointer}
+    .select,.input{padding:6px;border-radius:6px}
+    #editor{height:calc(100% - 48px)}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <strong>Éditeur Monaco (VS Code)</strong>
+
+    <!-- Sélecteur de langage -->
+    <select id="lang" class="select">
+      <option value="javascript">JavaScript</option>
+      <option value="typescript">TypeScript</option>
+      <option value="json">JSON</option>
+      <option value="html">HTML</option>
+      <option value="css">CSS</option>
+      <option value="markdown">Markdown</option>
+      <option value="cpp">C++</option>
+      <option value="lua">Lua</option>
+      <option value="luau">Luau</option>
+    </select>
+
+    <!-- Nom du fichier -->
+    <input id="filename" class="input" type="text" value="code" placeholder="nom du fichier" />
+    <button id="themeToggle" class="btn">Thème sombre</button>
+    <button id="download" class="btn">Télécharger</button>
+  </div>
+
+  <div id="editor"></div>
+
+  <!-- Librairie Monaco -->
+  <script src="https://unpkg.com/monaco-editor@0.39.0/min/vs/loader.js"></script>
+  <script>
+    require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.39.0/min/vs' } });
+
+    require(['vs/editor/editor.main'], function () {
+      const initialCode = `// Exemple : éditeur Monaco (comme VS Code)
+function hello(name) {
+  console.log('Bonjour, ' + name);
+}
+hello('Monde');`;
+
+      const editor = monaco.editor.create(document.getElementById('editor'), {
+        value: initialCode,
+        language: 'javascript',
+        theme: 'vs-dark',
+        automaticLayout: true,
+        minimap: { enabled: true },
+        fontSize: 14,
+      });
+
+      // --- Sélection du langage ---
+      const langSelect = document.getElementById('lang');
+      langSelect.addEventListener('change', e => {
+        const newLang = e.target.value;
+        monaco.editor.setModelLanguage(editor.getModel(), newLang);
+      });
+
+      // --- Thème sombre/clair ---
+      const themeBtn = document.getElementById('themeToggle');
+      let dark = true;
+      themeBtn.addEventListener('click', ()=>{
+        dark = !dark;
+        monaco.editor.setTheme(dark ? 'vs-dark' : 'vs');
+        themeBtn.textContent = dark ? 'Thème sombre' : 'Thème clair';
+      });
+
+      // --- Télécharger le fichier ---
+      const getExtension = (lang) => {
+        const map = {
+          javascript: 'js',
+          typescript: 'ts',
+          json: 'json',
+          html: 'html',
+          css: 'css',
+          markdown: 'md',
+          cpp: 'cpp',
+          lua: 'lua',
+          luau: 'luau'
+        };
+        return map[lang] || 'txt';
+      };
+
+      const downloadFile = () => {
+        const lang = langSelect.value;
+        const ext = getExtension(lang);
+        const nameInput = document.getElementById('filename').value.trim() || 'code';
+        const fileName = nameInput.endsWith(`.${ext}`) ? nameInput : `${nameInput}.${ext}`;
+        const blob = new Blob([editor.getValue()], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      };
+
+      document.getElementById('download').addEventListener('click', downloadFile);
+
+      // --- Raccourci clavier Ctrl+S ---
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S, downloadFile);
+    });
+  </script>
+</body>
+</html>
