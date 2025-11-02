@@ -3,121 +3,175 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Éditeur Monaco (type VS Code)</title>
+  <title>Éditeur Monaco avec Visualisation + Plein écran</title>
   <style>
     html,body{height:100%;margin:0}
     .topbar{
-      height:48px;
-      display:flex;
-      align-items:center;
-      padding:6px 12px;
-      gap:8px;
-      background:#1e1e1e;
-      color:#fff;
+      height:48px;display:flex;align-items:center;gap:8px;
+      padding:6px 12px;background:#1e1e1e;color:#fff
     }
     .btn{background:#0e639c;border:none;padding:6px 10px;border-radius:6px;color:#fff;cursor:pointer}
     .select,.input{padding:6px;border-radius:6px}
-    #editor{height:calc(100% - 48px)}
+    #editor{height:60%}
+    #preview{height:40%;border-top:2px solid #333;width:100%;background:#111;color:#fff;overflow:auto;position:relative}
+    iframe{width:100%;height:100%;border:none}
+    /* mode plein écran */
+    #preview.fullscreen {
+      position:fixed;
+      top:0; left:0; width:100%; height:100%;
+      z-index:9999;
+      border:none;
+      background:#000;
+    }
+    #exitFull {
+      position:absolute;
+      top:10px; right:10px;
+      background:#c00; color:#fff;
+      border:none;
+      border-radius:8px;
+      padding:6px 10px;
+      cursor:pointer;
+      font-weight:bold;
+      display:none;
+      z-index:10000;
+    }
+    #preview.fullscreen #exitFull { display:block; }
   </style>
 </head>
 <body>
   <div class="topbar">
-    <strong>Éditeur Monaco (VS Code)</strong>
-
-    <!-- Sélecteur de langage -->
+    <strong>Éditeur Monaco + Visualisation</strong>
     <select id="lang" class="select">
-      <option value="javascript">JavaScript</option>
-      <option value="typescript">TypeScript</option>
-      <option value="json">JSON</option>
       <option value="html">HTML</option>
       <option value="css">CSS</option>
-      <option value="markdown">Markdown</option>
+      <option value="javascript">JavaScript</option>
+      <option value="python">Python</option>
       <option value="cpp">C++</option>
       <option value="lua">Lua</option>
       <option value="luau">Luau</option>
+      <option value="markdown">Markdown</option>
     </select>
-
-    <!-- Nom du fichier -->
-    <input id="filename" class="input" type="text" value="code" placeholder="nom du fichier" />
+    <input id="filename" class="input" value="code" placeholder="nom du fichier" />
     <button id="themeToggle" class="btn">Thème sombre</button>
+    <button id="visualiser" class="btn">Visualiser</button>
+    <button id="fullscreen" class="btn">Plein écran</button>
     <button id="download" class="btn">Télécharger</button>
   </div>
 
   <div id="editor"></div>
+  <div id="preview">
+    <button id="exitFull">Quitter plein écran ✕</button>
+  </div>
 
-  <!-- Librairie Monaco -->
+  <!-- Librairies -->
   <script src="https://unpkg.com/monaco-editor@0.39.0/min/vs/loader.js"></script>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+
   <script>
+    let pyodideReady = false;
+    let pyodide = null;
+
+    async function initPyodide() {
+      pyodide = await loadPyodide();
+      pyodideReady = true;
+      console.log("Pyodide prêt !");
+    }
+    initPyodide();
+
     require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.39.0/min/vs' } });
 
     require(['vs/editor/editor.main'], function () {
-      const initialCode = `// Exemple : éditeur Monaco (comme VS Code)
-function hello(name) {
-  console.log('Bonjour, ' + name);
-}
-hello('Monde');`;
+      const initialCode = `<!-- Exemple HTML -->
+<h1>Bonjour Monde !</h1>
+<p>Modifie le code et clique sur Visualiser.</p>`;
 
       const editor = monaco.editor.create(document.getElementById('editor'), {
         value: initialCode,
-        language: 'javascript',
+        language: 'html',
         theme: 'vs-dark',
         automaticLayout: true,
         minimap: { enabled: true },
         fontSize: 14,
       });
 
-      // --- Sélection du langage ---
       const langSelect = document.getElementById('lang');
+      const filenameInput = document.getElementById('filename');
+      const previewDiv = document.getElementById('preview');
+      const exitFullBtn = document.getElementById('exitFull');
+
+      // changer le langage
       langSelect.addEventListener('change', e => {
-        const newLang = e.target.value;
-        monaco.editor.setModelLanguage(editor.getModel(), newLang);
+        monaco.editor.setModelLanguage(editor.getModel(), e.target.value);
       });
 
-      // --- Thème sombre/clair ---
-      const themeBtn = document.getElementById('themeToggle');
+      // thème clair/sombre
       let dark = true;
-      themeBtn.addEventListener('click', ()=>{
+      document.getElementById('themeToggle').addEventListener('click', ()=>{
         dark = !dark;
         monaco.editor.setTheme(dark ? 'vs-dark' : 'vs');
-        themeBtn.textContent = dark ? 'Thème sombre' : 'Thème clair';
       });
 
-      // --- Télécharger le fichier ---
-      const getExtension = (lang) => {
-        const map = {
-          javascript: 'js',
-          typescript: 'ts',
-          json: 'json',
-          html: 'html',
-          css: 'css',
-          markdown: 'md',
-          cpp: 'cpp',
-          lua: 'lua',
-          luau: 'luau'
-        };
-        return map[lang] || 'txt';
-      };
+      // extensions
+      const getExtension = lang => ({
+        html:'html', css:'css', javascript:'js', python:'py', cpp:'cpp', lua:'lua', luau:'luau', markdown:'md'
+      }[lang] || 'txt');
 
-      const downloadFile = () => {
+      // téléchargement
+      const downloadFile = ()=>{
         const lang = langSelect.value;
         const ext = getExtension(lang);
-        const nameInput = document.getElementById('filename').value.trim() || 'code';
-        const fileName = nameInput.endsWith(`.${ext}`) ? nameInput : `${nameInput}.${ext}`;
-        const blob = new Blob([editor.getValue()], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
+        const name = filenameInput.value.trim() || 'code';
+        const fileName = name.endsWith('.'+ext) ? name : `${name}.${ext}`;
+        const blob = new Blob([editor.getValue()], {type:'text/plain'});
         const a = document.createElement('a');
-        a.href = url;
+        a.href = URL.createObjectURL(blob);
         a.download = fileName;
-        document.body.appendChild(a);
         a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(a.href);
       };
-
       document.getElementById('download').addEventListener('click', downloadFile);
-
-      // --- Raccourci clavier Ctrl+S ---
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S, downloadFile);
+
+      // visualiser
+      document.getElementById('visualiser').addEventListener('click', async ()=>{
+        const code = editor.getValue();
+        const lang = langSelect.value;
+        previewDiv.innerHTML = '<button id="exitFull">Quitter plein écran ✕</button>';
+
+        if (lang === 'html' || lang === 'javascript' || lang === 'css') {
+          const iframe = document.createElement('iframe');
+          if (lang === 'html') iframe.srcdoc = code;
+          else if (lang === 'css') iframe.srcdoc = `<style>${code}</style>`;
+          else iframe.srcdoc = `<script>${code}<\/script>`;
+          previewDiv.appendChild(iframe);
+
+        } else if (lang === 'python') {
+          if (!pyodideReady) {
+            previewDiv.innerHTML += '<p>Chargement de l’interpréteur Python...</p>';
+            return;
+          }
+          try {
+            const output = await pyodide.runPythonAsync(code);
+            previewDiv.innerHTML += `<pre style="padding:8px;">${output ?? '(aucune sortie)'}</pre>`;
+          } catch(err) {
+            previewDiv.innerHTML += `<pre style="color:red;padding:8px;">Erreur : ${err}</pre>`;
+          }
+
+        } else {
+          previewDiv.innerHTML += `<p style="padding:8px;">Visualisation non disponible pour le langage <b>${lang}</b>.</p>`;
+        }
+
+        // réassocier le bouton quitter plein écran après réinjection HTML
+        document.getElementById('exitFull').addEventListener('click', ()=>previewDiv.classList.remove('fullscreen'));
+      });
+
+      // bouton plein écran
+      document.getElementById('fullscreen').addEventListener('click', ()=>{
+        previewDiv.classList.toggle('fullscreen');
+      });
+
+      // bouton quitter plein écran
+      exitFullBtn.addEventListener('click', ()=>previewDiv.classList.remove('fullscreen'));
     });
   </script>
 </body>
