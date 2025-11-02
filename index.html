@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Éditeur Monaco avec Visualisation + Plein écran</title>
+  <title>Éditeur Monaco – Multilangage + Upload</title>
   <style>
     html,body{height:100%;margin:0}
     .topbar{
@@ -15,7 +15,6 @@
     #editor{height:60%}
     #preview{height:40%;border-top:2px solid #333;width:100%;background:#111;color:#fff;overflow:auto;position:relative}
     iframe{width:100%;height:100%;border:none}
-    /* mode plein écran */
     #preview.fullscreen {
       position:fixed;
       top:0; left:0; width:100%; height:100%;
@@ -46,12 +45,13 @@
       <option value="css">CSS</option>
       <option value="javascript">JavaScript</option>
       <option value="python">Python</option>
-      <option value="cpp">C++</option>
+      <option value="markdown">Markdown</option>
       <option value="lua">Lua</option>
       <option value="luau">Luau</option>
-      <option value="markdown">Markdown</option>
+      <option value="cpp">C++</option>
     </select>
     <input id="filename" class="input" value="code" placeholder="nom du fichier" />
+    <input type="file" id="fileInput" class="input" />
     <button id="themeToggle" class="btn">Thème sombre</button>
     <button id="visualiser" class="btn">Visualiser</button>
     <button id="fullscreen" class="btn">Plein écran</button>
@@ -66,6 +66,10 @@
   <!-- Librairies -->
   <script src="https://unpkg.com/monaco-editor@0.39.0/min/vs/loader.js"></script>
   <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://unpkg.com/fengari@0.1.4/dist/fengari.js"></script>
+  <script src="https://unpkg.com/fengari-web@0.1.4/dist/fengari-web.js"></script>
+  <script src="https://unpkg.com/luau-wasm/dist/luau.min.js"></script>
 
   <script>
     let pyodideReady = false;
@@ -74,7 +78,7 @@
     async function initPyodide() {
       pyodide = await loadPyodide();
       pyodideReady = true;
-      console.log("Pyodide prêt !");
+      console.log("✅ Pyodide prêt !");
     }
     initPyodide();
 
@@ -98,25 +102,56 @@
       const filenameInput = document.getElementById('filename');
       const previewDiv = document.getElementById('preview');
       const exitFullBtn = document.getElementById('exitFull');
+      const fileInput = document.getElementById('fileInput');
 
-      // changer le langage
+      // Mapping extension -> Monaco language
+      const extToLang = {
+        html: 'html',
+        htm: 'html',
+        css: 'css',
+        js: 'javascript',
+        py: 'python',
+        lua: 'lua',
+        luau: 'luau',
+        md: 'markdown',
+        cpp: 'cpp',
+        c: 'cpp'
+      };
+
+      // Upload / import fichier
+      fileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+          editor.setValue(ev.target.result);
+          const nameParts = file.name.split('.');
+          const ext = nameParts[nameParts.length - 1].toLowerCase();
+          const lang = extToLang[ext] || 'plaintext';
+          langSelect.value = lang;
+          monaco.editor.setModelLanguage(editor.getModel(), lang);
+          filenameInput.value = nameParts.slice(0, -1).join('.') || 'code';
+        };
+        reader.readAsText(file);
+      });
+
+      // Changer le langage manuellement
       langSelect.addEventListener('change', e => {
         monaco.editor.setModelLanguage(editor.getModel(), e.target.value);
       });
 
-      // thème clair/sombre
+      // Thème clair/sombre
       let dark = true;
       document.getElementById('themeToggle').addEventListener('click', ()=>{
         dark = !dark;
         monaco.editor.setTheme(dark ? 'vs-dark' : 'vs');
       });
 
-      // extensions
       const getExtension = lang => ({
-        html:'html', css:'css', javascript:'js', python:'py', cpp:'cpp', lua:'lua', luau:'luau', markdown:'md'
+        html:'html', css:'css', javascript:'js', python:'py', markdown:'md', lua:'lua', luau:'luau', cpp:'cpp'
       }[lang] || 'txt');
 
-      // téléchargement
+      // Télécharger le fichier
       const downloadFile = ()=>{
         const lang = langSelect.value;
         const ext = getExtension(lang);
@@ -132,12 +167,13 @@
       document.getElementById('download').addEventListener('click', downloadFile);
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S, downloadFile);
 
-      // visualiser
+      // --- VISUALISATION ---
       document.getElementById('visualiser').addEventListener('click', async ()=>{
         const code = editor.getValue();
         const lang = langSelect.value;
         previewDiv.innerHTML = '<button id="exitFull">Quitter plein écran ✕</button>';
 
+        // HTML/CSS/JS
         if (lang === 'html' || lang === 'javascript' || lang === 'css') {
           const iframe = document.createElement('iframe');
           if (lang === 'html') iframe.srcdoc = code;
@@ -145,6 +181,7 @@
           else iframe.srcdoc = `<script>${code}<\/script>`;
           previewDiv.appendChild(iframe);
 
+        // Python
         } else if (lang === 'python') {
           if (!pyodideReady) {
             previewDiv.innerHTML += '<p>Chargement de l’interpréteur Python...</p>';
@@ -157,20 +194,43 @@
             previewDiv.innerHTML += `<pre style="color:red;padding:8px;">Erreur : ${err}</pre>`;
           }
 
+        // Markdown
+        } else if (lang === 'markdown') {
+          const html = marked.parse(code);
+          previewDiv.innerHTML += `<div style="padding:12px;background:#fff;color:#000;">${html}</div>`;
+
+        // Lua
+        } else if (lang === 'lua') {
+          try {
+            const luaEnv = fengari.load(code);
+            luaEnv();
+            previewDiv.innerHTML += `<pre style="padding:8px;">(Script Lua exécuté)</pre>`;
+          } catch(err) {
+            previewDiv.innerHTML += `<pre style="color:red;padding:8px;">Erreur Lua : ${err}</pre>`;
+          }
+
+        // Luau
+        } else if (lang === 'luau') {
+          try {
+            const L = new LuauVM();
+            L.execute(code);
+            previewDiv.innerHTML += `<pre style="padding:8px;">(Script Luau exécuté)</pre>`;
+          } catch(err) {
+            previewDiv.innerHTML += `<pre style="color:red;padding:8px;">Erreur Luau : ${err}</pre>`;
+          }
+
+        // Autres langages
         } else {
-          previewDiv.innerHTML += `<p style="padding:8px;">Visualisation non disponible pour le langage <b>${lang}</b>.</p>`;
+          previewDiv.innerHTML += `<p style="padding:8px;">Visualisation non disponible pour <b>${lang}</b>.</p>`;
         }
 
-        // réassocier le bouton quitter plein écran après réinjection HTML
         document.getElementById('exitFull').addEventListener('click', ()=>previewDiv.classList.remove('fullscreen'));
       });
 
-      // bouton plein écran
+      // --- PLEIN ÉCRAN ---
       document.getElementById('fullscreen').addEventListener('click', ()=>{
         previewDiv.classList.toggle('fullscreen');
       });
-
-      // bouton quitter plein écran
       exitFullBtn.addEventListener('click', ()=>previewDiv.classList.remove('fullscreen'));
     });
   </script>
